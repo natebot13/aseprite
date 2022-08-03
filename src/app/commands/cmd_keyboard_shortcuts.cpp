@@ -238,7 +238,7 @@ private:
         ASSERT(m_menuitem->getCommand());
 
         m_key = m_keys.command(
-          m_menuitem->getCommand()->id().c_str(),
+          m_menuitem->getCommandId().c_str(),
           m_menuitem->getParams());
 
         m_menuKeys[m_menuitem] = m_key;
@@ -607,8 +607,7 @@ private:
     if (m_headerItem.parent() == listbox)
       listbox->removeChild(&m_headerItem);
 
-    while (listbox->lastChild()) {
-      Widget* item = listbox->lastChild();
+    while (auto item = listbox->lastChild()) {
       listbox->removeChild(item);
       delete item;
     }
@@ -925,7 +924,7 @@ void KeyboardShortcutsCommand::fillMenusKeys(app::KeyboardShortcuts& keys,
 
       if (menuItem->getCommand()) {
         menuKeys[menuItem] =
-          keys.command(menuItem->getCommand()->id().c_str(),
+          keys.command(menuItem->getCommandId().c_str(),
                        menuItem->getParams());
       }
 

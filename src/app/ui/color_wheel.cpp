@@ -15,9 +15,8 @@
 #include "app/pref/preferences.h"
 #include "app/ui/skin/skin_theme.h"
 #include "app/ui/status_bar.h"
-#include "base/clamp.h"
+#include "app/util/shader_helpers.h"
 #include "base/pi.h"
-#include "filters/color_curve.h"
 #include "os/surface.h"
 #include "ui/graphics.h"
 #include "ui/menu.h"
@@ -67,6 +66,111 @@ ColorWheel::ColorWheel()
   initTheme();
 }
 
+#if SK_ENABLE_SKSL
+
+const char* ColorWheel::getMainAreaShader()
+{
+  // TODO create one shader for each wheel mode (RGB, RYB, normal)
+  if (m_mainShader.empty()) {
+    m_mainShader += "uniform half3 iRes;"
+                    "uniform half4 iHsv;"
+                    "uniform half4 iBack;"
+                    "uniform int iDiscrete;"
+                    "uniform int iMode;";
+    m_mainShader += kRGB_to_HSV_sksl;
+    m_mainShader += kHSV_to_RGB_sksl;
+    m_mainShader += R"(
+const half PI = 3.1415;
+
+half rybhue_to_rgbhue(half h) {
+ if (h >= 0 && h < 120) return h / 2;      // from red to yellow
+ else if (h < 180) return (h-60.0);        // from yellow to green
+ else if (h < 240) return 120 + 2*(h-180); // from green to blue
+ else return h;                            // from blue to red (same hue)
+}
+
+half4 main(vec2 fragcoord) {
+ vec2 res = vec2(min(iRes.x, iRes.y), min(iRes.x, iRes.y));
+ vec2 d = (fragcoord.xy-iRes.xy/2) / res.xy;
+ half r = length(d);
+
+ if (r <= 0.5) {
+  half a = atan(-d.y, d.x);
+  half hue = (floor(180.0 * a / PI)
+             + 180            // To avoid [-180,0) range
+             + 180 + 30       // To locate green at 12 o'clock
+             );
+
+  hue = mod(hue, 360);   // To leave hue in [0,360) range
+  if (iDiscrete != 0) {
+   hue += 15.0;
+   hue = floor(hue / 30.0);
+   hue *= 30.0;
+  }
+  if (iMode == 1) { // RYB color wheel
+   hue = rybhue_to_rgbhue(hue);
+  }
+  hue /= 360.0;
+
+  if (iMode == 2) { // Normal map mode
+   float di = 0.5 * r / 0.5;
+   half3 rgb = half3(0.5+di*cos(a), 0.5+di*sin(a), 1.0-di);
+   return half4(
+    clamp(rgb.x, 0, 1),
+    clamp(rgb.y, 0, 1),
+    clamp(rgb.z, 0.5, 1), 1);
+  }
+
+  half sat = r / 0.5;
+  if (iDiscrete != 0) {
+   sat *= 120.0;
+   sat = floor(sat / 20.0);
+   sat *= 20.0;
+   sat /= 100.0;
+   sat = clamp(sat, 0.0, 1.0);
+  }
+  return hsv_to_rgb(vec3(hue, sat, iHsv.w > 0 ? iHsv.z: 1.0)).rgb1;
+ }
+ else {
+  if (iMode == 2) // Normal map mode
+   return half4(0.5, 0.5, 1, 1);
+  return iBack;
+ }
+}
+)";
+  }
+  return m_mainShader.c_str();
+}
+
+const char* ColorWheel::getBottomBarShader()
+{
+  if (m_bottomShader.empty()) {
+    m_bottomShader += "uniform half3 iRes;"
+                      "uniform half4 iHsv;";
+    m_bottomShader += kHSV_to_RGB_sksl;
+    // TODO should we display the hue bar with the current sat/value?
+    m_bottomShader += R"(
+half4 main(vec2 fragcoord) {
+ half v = (fragcoord.x / iRes.x);
+ return hsv_to_rgb(half3(iHsv.x, iHsv.y, v)).rgb1;
+}
+)";
+  }
+  return m_bottomShader.c_str();
+}
+
+void ColorWheel::setShaderParams(SkRuntimeShaderBuilder& builder, bool main)
+{
+  builder.uniform("iHsv") = appColorHsv_to_SkV4(m_color);
+  if (main) {
+    builder.uniform("iBack") = gfxColor_to_SkV4(m_bgColor);
+    builder.uniform("iDiscrete") = (m_discrete ? 1: 0);
+    builder.uniform("iMode") = int(m_colorModel);
+  }
+}
+
+#endif // SK_ENABLE_SKSL
+
 app::Color ColorWheel::getMainAreaColor(const int _u, const int umax,
                                         const int _v, const int vmax)
 {
@@ -89,7 +193,7 @@ app::Color ColorWheel::getMainAreaColor(const int _u, const int umax,
                     boxsize, boxsize).contains(pos)) {
         m_harmonyPicked = true;
 
-        color = app::Color::fromHsv(convertHueAngle(int(color.getHsvHue()), 1),
+        color = app::Color::fromHsv(convertHueAngle(color.getHsvHue(), 1),
                                     color.getHsvSaturation(),
                                     color.getHsvValue(),
                                     m_color.getAlpha());
@@ -125,9 +229,9 @@ app::Color ColorWheel::getMainAreaColor(const int _u, const int umax,
     int b = 255 - di;
     if (d <= m_wheelRadius) {
       return app::Color::fromRgb(
-        base::clamp(r, 0, 255),
-        base::clamp(g, 0, 255),
-        base::clamp(b, 128, 255));
+        std::clamp(r, 0, 255),
+        std::clamp(g, 0, 255),
+        std::clamp(b, 128, 255));
     }
     else {
       return app::Color::fromRgb(128, 128, 255);
@@ -161,8 +265,8 @@ app::Color ColorWheel::getMainAreaColor(const int _u, const int umax,
     }
 
     return app::Color::fromHsv(
-      base::clamp(hue, 0, 360),
-      base::clamp(sat / 100.0, 0.0, 1.0),
+      std::clamp(hue, 0, 360),
+      std::clamp(sat / 100.0, 0.0, 1.0),
       (m_color.getType() != Color::MaskType ? m_color.getHsvValue(): 1.0),
       getCurrentAlphaForNewColor());
   }
@@ -176,7 +280,7 @@ app::Color ColorWheel::getBottomBarColor(const int u, const int umax)
   return app::Color::fromHsv(
     m_color.getHsvHue(),
     m_color.getHsvSaturation(),
-    base::clamp(val, 0.0, 1.0),
+    std::clamp(val, 0.0, 1.0),
     getCurrentAlphaForNewColor());
 }
 
@@ -195,7 +299,7 @@ void ColorWheel::onPaintMainArea(ui::Graphics* g, const gfx::Rect& rc)
       double angle = std::atan2(m_color.getGreen()-128,
                                 m_color.getRed()-128);
       double dist = (255-m_color.getBlue()) / 128.0;
-      dist = base::clamp(dist, 0.0, 1.0);
+      dist = std::clamp(dist, 0.0, 1.0);
 
       gfx::Point pos =
         m_wheelBounds.center() +
@@ -212,7 +316,7 @@ void ColorWheel::onPaintMainArea(ui::Graphics* g, const gfx::Rect& rc)
         double angle = color.getHsvHue()-30.0;
         double dist = color.getHsvSaturation();
 
-        color = app::Color::fromHsv(convertHueAngle(int(color.getHsvHue()), 1),
+        color = app::Color::fromHsv(convertHueAngle(color.getHsvHue(), 1),
                                     color.getHsvSaturation(),
                                     color.getHsvValue());
 
@@ -339,18 +443,18 @@ void ColorWheel::setHarmony(Harmony harmony)
 
 int ColorWheel::getHarmonies() const
 {
-  int i = base::clamp((int)m_harmony, 0, (int)Harmony::LAST);
+  int i = std::clamp((int)m_harmony, 0, (int)Harmony::LAST);
   return harmonies[i].n;
 }
 
 app::Color ColorWheel::getColorInHarmony(int j) const
 {
-  int i = base::clamp((int)m_harmony, 0, (int)Harmony::LAST);
-  j = base::clamp(j, 0, harmonies[i].n-1);
-  double hue = convertHueAngle(int(m_color.getHsvHue()), -1) + harmonies[i].hues[j];
+  int i = std::clamp((int)m_harmony, 0, (int)Harmony::LAST);
+  j = std::clamp(j, 0, harmonies[i].n-1);
+  double hue = convertHueAngle(m_color.getHsvHue(), -1) + harmonies[i].hues[j];
   double sat = m_color.getHsvSaturation() * harmonies[i].sats[j] / 100.0;
   return app::Color::fromHsv(std::fmod(hue, 360),
-                             base::clamp(sat, 0.0, 1.0),
+                             std::clamp(sat, 0.0, 1.0),
                              m_color.getHsvValue());
 }
 
@@ -421,51 +525,33 @@ void ColorWheel::onOptions()
   menu.showPopup(gfx::Point(rc.x+rc.w, rc.y));
 }
 
-int ColorWheel::convertHueAngle(int hue, int dir) const
+float ColorWheel::convertHueAngle(float h, int dir) const
 {
-  switch (m_colorModel) {
-
-    case ColorModel::RGB:
-      return hue;
-
-    case ColorModel::RYB: {
-      static std::vector<int> map1;
-      static std::vector<int> map2;
-
-      if (map2.empty()) {
-        filters::ColorCurve curve1(filters::ColorCurve::Linear);
-        curve1.addPoint(gfx::Point(0, 0));
-        curve1.addPoint(gfx::Point(60, 35));
-        curve1.addPoint(gfx::Point(122, 60));
-        curve1.addPoint(gfx::Point(165, 120));
-        curve1.addPoint(gfx::Point(218, 180));
-        curve1.addPoint(gfx::Point(275, 240));
-        curve1.addPoint(gfx::Point(330, 300));
-        curve1.addPoint(gfx::Point(360, 360));
-
-        filters::ColorCurve curve2(filters::ColorCurve::Linear);
-        for (const auto& pt : curve1)
-          curve2.addPoint(gfx::Point(pt.y, pt.x));
-
-        map1.resize(360);
-        map2.resize(360);
-        curve1.getValues(0, 359, map1);
-        curve2.getValues(0, 359, map2);
-      }
-
-      if (hue < 0)
-        hue += 360;
-      hue %= 360;
-
-      ASSERT(hue >= 0 && hue < 360);
-      if (dir > 0)
-        return map1[hue];
-      else if (dir < 0)
-        return map2[hue];
+  if (m_colorModel == ColorModel::RYB) {
+    if (dir == 1) {
+      // rybhue_to_rgbhue() maps:
+      //   [0,120) -> [0,60)
+      //   [120,180) -> [60,120)
+      //   [180,240) -> [120,240)
+      //   [240,360] -> [240,360]
+      if (h >= 0 && h < 120) return h / 2;      // from red to yellow
+      else if (h < 180) return (h-60);          // from yellow to green
+      else if (h < 240) return 120 + 2*(h-180); // from green to blue
+      else return h;                             // from blue to red (same hue)
     }
-
+    else {
+      // rgbhue_to_rybhue()
+      //   [0,60) -> [0,120)
+      //   [60,120) -> [120,180)
+      //   [120,240) -> [180,240)
+      //   [240,360] -> [240,360]
+      if (h >= 0 && h < 60) return 2 * h;       // from red to yellow
+      else if (h < 120) return 60 + h;          // from yellow to green
+      else if (h < 240) return 180 + (h-120)/2; // from green to blue
+      else return h;                            // from blue to red (same hue)
+    }
   }
-  return hue;
+  return h;
 }
 
 } // namespace app

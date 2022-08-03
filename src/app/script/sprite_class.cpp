@@ -11,6 +11,7 @@
 
 #include "app/app.h"
 #include "app/cmd/add_layer.h"
+#include "app/cmd/add_slice.h"
 #include "app/cmd/assign_color_profile.h"
 #include "app/cmd/clear_cel.h"
 #include "app/cmd/convert_color_profile.h"
@@ -139,9 +140,9 @@ int Sprite_new(lua_State* L)
 
 int Sprite_eq(lua_State* L)
 {
-  const auto a = get_docobj<Sprite>(L, 1);
-  const auto b = get_docobj<Sprite>(L, 2);
-  lua_pushboolean(L, a->id() == b->id());
+  const auto a = may_get_docobj<Sprite>(L, 1);
+  const auto b = may_get_docobj<Sprite>(L, 2);
+  lua_pushboolean(L, (!a && !b) || (a && b && a->id() == b->id()));
   return 1;
 }
 
@@ -571,7 +572,10 @@ int Sprite_newSlice(lua_State* L)
   if (!bounds.isEmpty())
     slice->insert(0, doc::SliceKey(bounds));
 
-  sprite->slices().add(slice);
+  Tx tx;
+  tx(new cmd::AddSlice(sprite, slice));
+  tx.commit();
+
   push_docobj(L, slice);
   return 1;
 }

@@ -1,5 +1,5 @@
 // Aseprite UI Library
-// Copyright (C) 2018-2020  Igara Studio S.A.
+// Copyright (C) 2018-2022  Igara Studio S.A.
 // Copyright (C) 2001-2017  David Capello
 //
 // This file is released under the terms of the MIT license.
@@ -11,7 +11,6 @@
 
 #include "ui/combobox.h"
 
-#include "base/clamp.h"
 #include "gfx/size.h"
 #include "os/font.h"
 #include "ui/button.h"
@@ -202,8 +201,12 @@ void ComboBox::deleteItem(int itemIndex)
 
 void ComboBox::deleteAllItems()
 {
-  for (Widget* item : m_items)
-    delete item;                // widget
+  // Delete all items back to front, in this way Widget::removeChild()
+  // doesn't have to use linear search to update m_parentIndex of all
+  // other children.
+  auto end = m_items.rend();
+  for (auto it=m_items.rbegin(); it != end; ++it)
+    delete *it;                // widget
 
   m_items.clear();
   m_selected = -1;
@@ -324,7 +327,8 @@ void ComboBox::setValue(const std::string& value)
 {
   if (isEditable()) {
     m_entry->setText(value);
-    m_entry->selectAllText();
+    if (hasFocus())
+      m_entry->selectAllText();
   }
   else {
     int index = findItemIndexByValue(value);
@@ -510,11 +514,7 @@ bool ComboBoxEntry::onProcessMessage(Message* msg)
             (pick == listbox || pick->hasAncestor(listbox))) {
           releaseMouse();
 
-          MouseMessage mouseMsg2(kMouseDownMessage,
-                                 mouseMsg->pointerType(),
-                                 mouseMsg->button(),
-                                 mouseMsg->modifiers(),
-                                 mouseMsg->position());
+          MouseMessage mouseMsg2(kMouseDownMessage, *mouseMsg);
           pick->sendMessage(&mouseMsg2);
           return true;
         }
@@ -536,6 +536,14 @@ bool ComboBoxEntry::onProcessMessage(Message* msg)
       }
       return result;
     }
+
+    case kFocusLeaveMessage:
+      if (m_comboBox->isEditable() &&
+          m_comboBox->m_window &&
+          !View::getView(m_comboBox->m_listbox)->hasMouse()) {
+        m_comboBox->closeListBox();
+      }
+      break;
 
   }
 
@@ -628,7 +636,7 @@ void ComboBox::openListBox()
         size.h += item->sizeHint().h;
 
     int max = std::max(entryBounds.y, ui::display_h() - entryBounds.y2()) - 8*guiscale();
-    size.h = base::clamp(size.h, textHeight(), max);
+    size.h = std::clamp(size.h, textHeight(), max);
     viewport->setMinSize(size);
   }
 

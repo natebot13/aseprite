@@ -63,7 +63,7 @@
 		 text="@.show_home" />
           <check id="expand_menubar_on_mouseover"
                  text="@.expand_menu_bar_items_on_mouseover"
-                 tooltip="@.expand_menu_bar_items_on_mouseover" />
+                 tooltip="@.expand_menu_bar_items_on_mouseover_tooltip" />
           <check id="color_bar_entries_separator"
                  text="@.color_bar_entries_separator"
                  tooltip="@.color_bar_entries_separator"
@@ -511,7 +511,16 @@
           </hbox>
           <check id="native_clipboard" text="@.native_clipboard" />
           <check id="native_file_dialog" text="@.native_file_dialog" />
-	  <hbox id="load_wintab_driver_box">
+          <hbox>
+            <check id="shaders_for_color_selectors"
+                   text="@.shaders_for_color_selectors"
+                   pref="experimental.use_shaders_for_color_selectors" />
+            <link text="(#960)" url="https://github.com/aseprite/aseprite/issues/960" />
+          </hbox>
+          <check id="tint_shade_tone_hue_with_sat_value"
+                 text="@.hue_with_sat_value"
+                 pref="experimental.hue_with_sat_value_for_color_selector" />
+          <hbox id="load_wintab_driver_box">
             <check id="load_wintab_driver2"
                    text="@.load_wintab_driver"
                    tooltip="@.load_wintab_driver_tooltip" />

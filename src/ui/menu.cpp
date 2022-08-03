@@ -11,7 +11,6 @@
 
 #include "ui/menu.h"
 
-#include "base/clamp.h"
 #include "gfx/size.h"
 #include "os/font.h"
 #include "ui/intern.h"
@@ -326,8 +325,8 @@ void Menu::showPopup(const gfx::Point& pos)
 
   // Menubox position
   window->positionWindow(
-    base::clamp(pos.x, 0, ui::display_w() - window->bounds().w),
-    base::clamp(pos.y, 0, ui::display_h() - window->bounds().h));
+    std::clamp(pos.x, 0, ui::display_w() - window->bounds().w),
+    std::clamp(pos.y, 0, ui::display_h() - window->bounds().h));
 
   add_scrollbars_if_needed(window.get());
 
@@ -444,7 +443,7 @@ bool MenuBox::onProcessMessage(Message* msg)
       if (!base->was_clicked)
         break;
 
-      //[[fallthrough]];
+      [[fallthrough]];
     }
 
     case kMouseDownMessage:
@@ -462,12 +461,17 @@ bool MenuBox::onProcessMessage(Message* msg)
 
         gfx::Point mousePos = static_cast<MouseMessage*>(msg)->position();
 
+        // Get the widget below the mouse cursor
+        auto mgr = manager();
+        if (!mgr)
+          break;
+
+        Widget* picked = mgr->pick(mousePos);
+
         // Here we catch the filtered messages (menu-bar or the
         // popuped menu-box) to detect if the user press outside of
         // the widget
         if (msg->type() == kMouseDownMessage && m_base != nullptr) {
-          Widget* picked = manager()->pick(mousePos);
-
           // If one of these conditions are accomplished we have to
           // close all menus (back to menu-bar or close the popuped
           // menubox), this is the place where we control if...
@@ -484,8 +488,6 @@ bool MenuBox::onProcessMessage(Message* msg)
           }
         }
 
-        // Get the widget below the mouse cursor
-        Widget* picked = menu->pick(mousePos);
         if (picked) {
           if ((picked->type() == kMenuItemWidget) &&
               !(picked->hasFlags(DISABLED))) {
@@ -861,7 +863,7 @@ bool MenuItem::onProcessMessage(Message* msg)
         Rect pos = window->bounds();
 
         if (inBar()) {
-          pos.x = base::clamp(bounds().x, 0, ui::display_w()-pos.w);
+          pos.x = std::clamp(bounds().x, 0, ui::display_w()-pos.w);
           pos.y = std::max(0, bounds().y2());
         }
         else {
@@ -870,9 +872,9 @@ bool MenuItem::onProcessMessage(Message* msg)
           int x, y = bounds().y-3*guiscale();
           Rect r1(0, 0, pos.w, pos.h), r2(0, 0, pos.w, pos.h);
 
-          r1.x = x_left = base::clamp(x_left, 0, ui::display_w()-pos.w);
-          r2.x = x_right = base::clamp(x_right, 0, ui::display_w()-pos.w);
-          r1.y = r2.y = y = base::clamp(y, 0, ui::display_h()-pos.h);
+          r1.x = x_left = std::clamp(x_left, 0, std::max(0, ui::display_w()-pos.w));
+          r2.x = x_right = std::clamp(x_right, 0, std::max(0, ui::display_w()-pos.w));
+          r1.y = r2.y = y = std::clamp(y, 0, std::max(0, ui::display_h()-pos.h));
 
           // Calculate both intersections
           gfx::Rect s1 = r1.createIntersection(old_pos);

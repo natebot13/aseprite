@@ -1,5 +1,5 @@
 # Aseprite
-# Copyright (C) 2021  Igara Studio S.A.
+# Copyright (C) 2021-2022  Igara Studio S.A.
 # Copyright (C) 2001-2018  David Capello
 
 include_directories(.)
@@ -33,7 +33,7 @@ if(NOT USE_SHARED_GIFLIB)
   add_subdirectory(giflib)
 endif()
 
-if(ENABLE_WEBP)
+if(ENABLE_WEBP AND NOT LAF_BACKEND STREQUAL "skia")
   set(WEBP_BUILD_EXTRAS OFF CACHE BOOL "Build extras.")
   set(WEBP_BUILD_ANIM_UTILS OFF CACHE BOOL "Build animation utilities.")
   set(WEBP_BUILD_CWEBP OFF CACHE BOOL "Build the cwebp command line tool.")
@@ -85,6 +85,13 @@ if(NOT USE_SHARED_FREETYPE AND NOT LAF_BACKEND STREQUAL "skia")
 
   add_subdirectory(freetype2)
 
+  target_compile_definitions(freetype PUBLIC
+    FT_CONFIG_OPTION_SYSTEM_ZLIB)
+  if(UNIX)
+    target_include_directories(freetype BEFORE PUBLIC
+      ${CMAKE_CURRENT_BINARY_DIR}/freetype2/include)
+  endif()
+
   if(NOT USE_SHARED_LIBPNG)
     add_dependencies(freetype ${PNG_LIBRARIES})
   endif()
@@ -128,6 +135,7 @@ set(ENABLE_LZMA OFF CACHE BOOL "Enable the use of the system LZMA library if fou
 set(ENABLE_ZSTD OFF CACHE BOOL "Enable the use of the system zstd library if found")
 set(ENABLE_CNG OFF CACHE BOOL "Enable the use of CNG(Crypto Next Generation)")
 set(ENABLE_BZip2 OFF CACHE BOOL "Enable the use of the system BZip2 library if found")
+set(ENABLE_EXPAT OFF CACHE BOOL "Enable the use of the system EXPAT library if found")
 set(ENABLE_LIBXML2 OFF CACHE BOOL "Enable the use of the system libxml2 library if found")
 set(ENABLE_CAT OFF CACHE BOOL "Enable cat building")
 set(ENABLE_TAR OFF CACHE BOOL "Enable tar building")

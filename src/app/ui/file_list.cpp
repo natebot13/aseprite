@@ -14,7 +14,6 @@
 #include "app/modules/gfx.h"
 #include "app/thumbnail_generator.h"
 #include "app/ui/skin/skin_theme.h"
-#include "base/clamp.h"
 #include "base/string.h"
 #include "base/time.h"
 #include "os/font.h"
@@ -159,7 +158,7 @@ void FileList::goUp()
 
 void FileList::setZoom(const double zoom)
 {
-  m_zoom = base::clamp(zoom, 1.0, 8.0);
+  m_zoom = std::clamp(zoom, 1.0, 8.0);
   m_req_valid = false;
 
   // if (auto view = View::getView(this))
@@ -179,6 +178,7 @@ bool FileList::onProcessMessage(Message* msg)
 
     case kMouseDownMessage:
       captureMouse();
+      [[fallthrough]];
 
     case kMouseMoveMessage:
       if (hasCapture()) {
@@ -358,7 +358,7 @@ bool FileList::onProcessMessage(Message* msg)
         }
 
         if (bottom > 0)
-          selectIndex(base::clamp(select, 0, bottom-1));
+          selectIndex(std::clamp(select, 0, bottom-1));
 
         return true;
       }
@@ -465,9 +465,22 @@ void FileList::onPaint(ui::PaintEvent& ev)
     tbounds.shrink(1);
 
     os::SurfaceRef thumbnail = m_selected->getThumbnail();
-    g->drawRgbaSurface(thumbnail.get(),
-                       gfx::Rect(0, 0, thumbnail->width(), thumbnail->height()),
-                       tbounds);
+
+    ui::Paint paint;
+    paint.blendMode(os::BlendMode::SrcOver);
+
+    os::Sampling sampling;
+    if (thumbnail->width() > tbounds.w &&
+        thumbnail->height() > tbounds.h) {
+      sampling = os::Sampling(os::Sampling::Filter::Linear,
+                              os::Sampling::Mipmap::Nearest);
+    }
+
+    g->drawSurface(thumbnail.get(),
+                   gfx::Rect(0, 0, thumbnail->width(), thumbnail->height()),
+                   tbounds,
+                   sampling,
+                   &paint);
   }
 }
 
@@ -561,9 +574,21 @@ void FileList::paintItem(ui::Graphics* g, IFileItem* fi, const int i)
         tbounds.shrink(1);
       }
 
-      g->drawRgbaSurface(thumbnail.get(),
-                         gfx::Rect(0, 0, thumbnail->width(), thumbnail->height()),
-                         tbounds);
+      ui::Paint paint;
+      paint.blendMode(os::BlendMode::SrcOver);
+
+      os::Sampling sampling;
+      if (thumbnail->width() > tbounds.w &&
+          thumbnail->height() > tbounds.h) {
+        sampling = os::Sampling(os::Sampling::Filter::Linear,
+                                os::Sampling::Mipmap::Nearest);
+      }
+
+      g->drawSurface(thumbnail.get(),
+                     gfx::Rect(0, 0, thumbnail->width(), thumbnail->height()),
+                     tbounds,
+                     sampling,
+                     &paint);
     }
     else {
       tbounds = gfx::Rect(0, 0, 20*guiscale(), 2+4*(8.0-m_zoom)/8.0*guiscale())
@@ -595,7 +620,7 @@ gfx::Rect FileList::mainThumbnailBounds()
   gfx::Rect vp = view->viewportBounds();
   int x = vp.x+vp.w - 2*guiscale() - thumbnail->width();
   int y = info.bounds.center().y - thumbnail->height()/2 + bounds().y;
-  y = base::clamp(y, vp.y+2*guiscale(), vp.y+vp.h-3*guiscale()-thumbnail->height());
+  y = std::clamp(y, vp.y+2*guiscale(), vp.y+vp.h-3*guiscale()-thumbnail->height());
   x -= bounds().x;
   y -= bounds().y;
   return gfx::Rect(x, y, thumbnail->width(), thumbnail->height());

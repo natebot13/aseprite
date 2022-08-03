@@ -1,5 +1,5 @@
 // Aseprite
-// Copyright (C) 2018-2019  Igara Studio S.A.
+// Copyright (C) 2018-2022  Igara Studio S.A.
 // Copyright (C) 2018  David Capello
 //
 // This program is distributed under the terms of
@@ -19,7 +19,6 @@
 #include "app/script/luacpp.h"
 #include "app/script/userdata.h"
 #include "app/tx.h"
-#include "base/clamp.h"
 #include "doc/layer.h"
 #include "doc/sprite.h"
 
@@ -32,9 +31,9 @@ namespace {
 
 int Layer_eq(lua_State* L)
 {
-  const auto a = get_docobj<Layer>(L, 1);
-  const auto b = get_docobj<Layer>(L, 2);
-  lua_pushboolean(L, a->id() == b->id());
+  const auto a = may_get_docobj<Layer>(L, 1);
+  const auto b = may_get_docobj<Layer>(L, 2);
+  lua_pushboolean(L, (!a && !b) || (a && b && a->id() == b->id()));
   return 1;
 }
 
@@ -272,7 +271,7 @@ int Layer_set_stackIndex(lua_State* L)
   }
 
   if (newStackIndex-1 < int(parent->layers().size())) {
-    beforeThis = parent->layers()[base::clamp(newStackIndex-1, 0, (int)parent->layers().size())];
+    beforeThis = parent->layers()[std::clamp(newStackIndex-1, 0, (int)parent->layers().size())];
   }
   else {
     beforeThis = nullptr;

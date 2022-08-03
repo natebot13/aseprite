@@ -18,7 +18,6 @@
 #include "app/context.h"
 #include "app/script/engine.h"
 #include "app/ui/skin/skin_theme.h"
-#include "base/clamp.h"
 #include "base/convert_to.h"
 #include "base/file_content.h"
 #include "base/fs.h"
@@ -310,7 +309,7 @@ public:
   }
 
   void clear() {
-    while (auto item = firstChild()) {
+    while (auto item = lastChild()) {
       removeChild(item);
       item->deferDelete();
     }
@@ -730,7 +729,7 @@ private:
   }
 
   void clearLocals() {
-    while (auto item = locals()->firstChild()) {
+    while (auto item = locals()->lastChild()) {
       locals()->removeChild(item);
       item->deferDelete();
     }

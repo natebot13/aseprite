@@ -18,7 +18,6 @@
 
 #include "ui/manager.h"
 
-#include "base/clamp.h"
 #include "base/concurrent_queue.h"
 #include "base/scoped_value.h"
 #include "base/time.h"
@@ -275,6 +274,8 @@ void Manager::flipDisplay()
 
     m_dirtyRegion.clear();
   }
+
+  m_display->swapBuffers();
 }
 
 void Manager::updateAllDisplaysWithNewScale(int scale)
@@ -465,7 +466,8 @@ void Manager::generateMessagesFromOSEvents()
           osEvent.position(),
           m_mouseButton = mouse_button_from_os_to_ui(osEvent),
           osEvent.modifiers(),
-          osEvent.pointerType());
+          osEvent.pointerType(),
+          osEvent.pressure());
         break;
       }
 
@@ -484,7 +486,8 @@ void Manager::generateMessagesFromOSEvents()
           osEvent.position(),
           m_mouseButton = mouse_button_from_os_to_ui(osEvent),
           osEvent.modifiers(),
-          osEvent.pointerType());
+          osEvent.pointerType(),
+          osEvent.pressure());
         break;
       }
 
@@ -548,7 +551,8 @@ void Manager::handleMouseMove(const gfx::Point& mousePos,
 void Manager::handleMouseDown(const gfx::Point& mousePos,
                               MouseButton mouseButton,
                               KeyModifiers modifiers,
-                              PointerType pointerType)
+                              PointerType pointerType,
+                              const float pressure)
 {
   handleWindowZOrder();
 
@@ -559,7 +563,10 @@ void Manager::handleMouseDown(const gfx::Point& mousePos,
       mousePos,
       pointerType,
       mouseButton,
-      modifiers));
+      modifiers,
+      gfx::Point(0, 0),
+      false,
+      pressure));
 }
 
 void Manager::handleMouseUp(const gfx::Point& mousePos,
@@ -580,7 +587,8 @@ void Manager::handleMouseUp(const gfx::Point& mousePos,
 void Manager::handleMouseDoubleClick(const gfx::Point& mousePos,
                                      MouseButton mouseButton,
                                      KeyModifiers modifiers,
-                                     PointerType pointerType)
+                                     PointerType pointerType,
+                                     const float pressure)
 {
   Widget* dst = (capture_widget ? capture_widget: mouse_widget);
   if (dst) {
@@ -588,7 +596,9 @@ void Manager::handleMouseDoubleClick(const gfx::Point& mousePos,
       newMouseMessage(
         kDoubleClickMessage,
         dst, mousePos, pointerType,
-        mouseButton, modifiers));
+        mouseButton, modifiers,
+        gfx::Point(0, 0), false,
+        pressure));
   }
 }
 
@@ -1343,8 +1353,8 @@ void Manager::onInitTheme(InitThemeEvent& ev)
         gfx::Rect bounds = window->bounds();
         bounds *= newUIScale;
         bounds /= oldUIScale;
-        bounds.x = base::clamp(bounds.x, 0, m_display->width() - bounds.w);
-        bounds.y = base::clamp(bounds.y, 0, m_display->height() - bounds.h);
+        bounds.x = std::clamp(bounds.x, 0, m_display->width() - bounds.w);
+        bounds.y = std::clamp(bounds.y, 0, m_display->height() - bounds.h);
         window->setBounds(bounds);
       }
     }
@@ -1539,7 +1549,7 @@ bool Manager::sendMessageToWidget(Message* msg, Widget* widget)
     // Restore overlays in the region that we're going to paint.
     OverlayManager::instance()->restoreOverlappedAreas(paintMsg->rect());
 
-    os::Surface* surface = m_display->surface();
+    os::SurfaceRef surface(base::AddRef(m_display->surface()));
     surface->saveClip();
 
     if (surface->clipRect(paintMsg->rect())) {
@@ -1848,11 +1858,10 @@ bool Manager::processFocusMovementMessage(Message* msg)
         break;
 
       // Arrow keys
-      case kKeyLeft:  if (!cmp) cmp = cmp_left;
-      case kKeyRight: if (!cmp) cmp = cmp_right;
-      case kKeyUp:    if (!cmp) cmp = cmp_up;
+      case kKeyLeft:  if (!cmp) cmp = cmp_left;  [[fallthrough]];
+      case kKeyRight: if (!cmp) cmp = cmp_right; [[fallthrough]];
+      case kKeyUp:    if (!cmp) cmp = cmp_up;    [[fallthrough]];
       case kKeyDown:  if (!cmp) cmp = cmp_down;
-
         // More than one widget
         if (count > 1) {
           // Position where the focus come

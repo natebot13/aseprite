@@ -1,12 +1,13 @@
 # Aseprite
-# Copyright (C) 2018-2021  Igara Studio S.A.
+# Copyright (C) 2018-2022  Igara Studio S.A.
 # Copyright (C) 2001-2018  David Capello
 
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.16)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF) # We use -std=c++14 instead of -std=gnu++14 in macOS
+set(CMAKE_CXX_EXTENSIONS OFF) # We use -std=c++17 instead of -std=gnu++17 in macOS
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
 if(COMMAND cmake_policy)
   # CMP0003: Libraries linked via full path no longer produce linker search paths.
@@ -226,13 +227,6 @@ endif()
 include_directories(${PNG_INCLUDE_DIRS})
 add_definitions(-DPNG_NO_MMX_CODE) # Do not use MMX optimizations in PNG code
 
-# libwebp
-if(ENABLE_WEBP)
-  set(WEBP_LIBRARIES webp webpdemux libwebpmux)
-  set(WEBP_INCLUDE_DIR ${LIBWEBP_DIR}/src)
-  include_directories(${WEBP_INCLUDE_DIR})
-endif()
-
 # tinyxml
 if(USE_SHARED_TINYXML)
   find_library(TINYXML_LIBRARY NAMES tinyxml)
@@ -330,6 +324,22 @@ set(LAF_WITH_TESTS ${ENABLE_TESTS} CACHE BOOL "Enable LAF tests")
 set(UNDO_TESTS     ${ENABLE_TESTS} CACHE BOOL "Enable undo tests")
 
 add_subdirectory(laf)
+
+# libwebp
+if(ENABLE_WEBP)
+  # Use libwebp from Skia
+  if(LAF_BACKEND STREQUAL "skia")
+    find_library(WEBP_LIBRARIES webp
+      NAMES libwebp # required for Windows
+      PATHS "${SKIA_LIBRARY_DIR}" NO_DEFAULT_PATH)
+    set(WEBP_INCLUDE_DIR "${SKIA_DIR}/third_party/externals/libwebp/src")
+  else()
+    set(WEBP_LIBRARIES webp webpdemux libwebpmux)
+    set(WEBP_INCLUDE_DIR ${LIBWEBP_DIR}/src)
+  endif()
+  include_directories(${WEBP_INCLUDE_DIR})
+endif()
+message(STATUS "aseprite libwebp: ${WEBP_LIBRARIES}")
 
 # LAF libraries + Aseprite are compiled with config.h
 target_include_directories(laf-base PUBLIC src)

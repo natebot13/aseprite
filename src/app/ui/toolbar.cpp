@@ -226,10 +226,7 @@ bool ToolBar::onProcessMessage(Message* msg)
 
           MouseMessage* mouseMsg2 = new MouseMessage(
             kMouseDownMessage,
-            mouseMsg->pointerType(),
-            mouseMsg->button(),
-            mouseMsg->modifiers(),
-            mouseMsg->position());
+            *mouseMsg);
           mouseMsg2->setRecipient(strip);
           manager()->enqueueMessage(mouseMsg2);
         }
@@ -248,7 +245,7 @@ bool ToolBar::onProcessMessage(Message* msg)
       m_openedRecently = false;
 
       releaseMouse();
-      // fallthrough
+      [[fallthrough]];
 
     case kMouseLeaveMessage:
       if (hasCapture())
@@ -612,7 +609,7 @@ bool ToolBar::ToolStrip::onProcessMessage(Message* msg)
 
     case kMouseDownMessage:
       captureMouse();
-      // fallthrough
+      [[fallthrough]];
 
     case kMouseMoveMessage: {
       MouseMessage* mouseMsg = static_cast<MouseMessage*>(msg);
@@ -658,10 +655,7 @@ bool ToolBar::ToolStrip::onProcessMessage(Message* msg)
 
           MouseMessage* mouseMsg2 = new MouseMessage(
             kMouseDownMessage,
-            mouseMsg->pointerType(),
-            mouseMsg->button(),
-            mouseMsg->modifiers(),
-            mouseMsg->position());
+            *mouseMsg);
           mouseMsg2->setRecipient(bar);
           manager()->enqueueMessage(mouseMsg2);
         }

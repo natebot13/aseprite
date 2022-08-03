@@ -273,8 +273,8 @@ private:
 
   void clear() {
     // Delete all children
-    while (firstChild())
-      delete firstChild();
+    while (auto child = lastChild())
+      delete child;
   }
 
   void processNode(cmark_node* root,
@@ -417,6 +417,7 @@ private:
             inImage = true;
           else if (ev_type == CMARK_EVENT_EXIT)
             inImage = false;
+          break;
         }
 
         case CMARK_NODE_LINK: {
@@ -434,6 +435,7 @@ private:
             }
             inLink = nullptr;
           }
+          break;
         }
 
       }

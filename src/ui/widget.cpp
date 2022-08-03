@@ -13,7 +13,6 @@
 
 #include "ui/widget.h"
 
-#include "base/clamp.h"
 #include "base/memory.h"
 #include "base/string.h"
 #include "base/utf8_decode.h"
@@ -66,6 +65,7 @@ Widget::Widget(WidgetType type)
   , m_bgColor(gfx::ColorNone)
   , m_bounds(0, 0, 0, 0)
   , m_parent(nullptr)
+  , m_parentIndex(-1)
   , m_sizeHint(nullptr)
   , m_mnemonic(0)
   , m_minSize(0, 0)
@@ -424,11 +424,17 @@ Manager* Widget::manager() const
 
 int Widget::getChildIndex(Widget* child)
 {
-  auto it = std::find(m_children.begin(), m_children.end(), child);
-  if (it != m_children.end())
-    return it - m_children.begin();
-  else
+  if (!child)
     return -1;
+
+#ifdef _DEBUG
+  ASSERT(child->parent() == this);
+  auto it = std::find(m_children.begin(), m_children.end(), child);
+  ASSERT(it != m_children.end());
+  ASSERT(child->parentIndex() == (it - m_children.begin()));
+#endif
+
+  return child->parentIndex();
 }
 
 Widget* Widget::nextSibling()
@@ -438,12 +444,9 @@ Widget* Widget::nextSibling()
   if (!m_parent)
     return nullptr;
 
-  WidgetsList::iterator begin = m_parent->m_children.begin();
-  WidgetsList::iterator end = m_parent->m_children.end();
-  WidgetsList::iterator it = std::find(begin, end, this);
-
-  if (it == end)
-    return nullptr;
+  auto begin = m_parent->m_children.begin();
+  auto end = m_parent->m_children.end();
+  auto it = begin + m_parentIndex;
 
   if (++it == end)
     return nullptr;
@@ -458,11 +461,10 @@ Widget* Widget::previousSibling()
   if (!m_parent)
     return nullptr;
 
-  WidgetsList::iterator begin = m_parent->m_children.begin();
-  WidgetsList::iterator end = m_parent->m_children.end();
-  WidgetsList::iterator it = std::find(begin, end, this);
+  auto begin = m_parent->m_children.begin();
+  auto it = begin + m_parentIndex;
 
-  if (it == begin || it == end)
+  if (it == begin)
     return nullptr;
 
   return *(--it);
@@ -536,32 +538,38 @@ void Widget::addChild(Widget* child)
   ASSERT_VALID_WIDGET(this);
   ASSERT_VALID_WIDGET(child);
 
+  int i = int(m_children.size());
   m_children.push_back(child);
   child->m_parent = this;
+  child->m_parentIndex = i;
 }
 
-void Widget::removeChild(WidgetsList::iterator& it)
+void Widget::removeChild(const WidgetsList::iterator& it)
 {
   Widget* child = *it;
 
   ASSERT(it != m_children.end());
-  if (it != m_children.end())
-    m_children.erase(it);
+  if (it != m_children.end()) {
+    auto it2 = m_children.erase(it);
+    for (auto end=m_children.end(); it2!=end; ++it2)
+      --(*it2)->m_parentIndex;
+  }
 
   // Free from manager
   if (auto man = manager())
     man->freeWidget(child);
 
   child->m_parent = nullptr;
+  child->m_parentIndex = -1;
 }
 
 void Widget::removeChild(Widget* child)
 {
   ASSERT_VALID_WIDGET(this);
   ASSERT_VALID_WIDGET(child);
-
-  WidgetsList::iterator it = std::find(m_children.begin(), m_children.end(), child);
-  removeChild(it);
+  ASSERT(child->parent() == this);
+  if (child->parent() == this)
+    removeChild(m_children.begin() + child->m_parentIndex);
 }
 
 void Widget::removeAllChildren()
@@ -575,18 +583,29 @@ void Widget::replaceChild(Widget* oldChild, Widget* newChild)
   ASSERT_VALID_WIDGET(oldChild);
   ASSERT_VALID_WIDGET(newChild);
 
-  WidgetsList::iterator before =
-    std::find(m_children.begin(), m_children.end(), oldChild);
-  if (before == m_children.end()) {
+#if _DEBUG
+  {
+    auto it = std::find(m_children.begin(), m_children.end(), oldChild);
+    ASSERT(it != m_children.end());
+    ASSERT(oldChild->m_parentIndex == (it - m_children.begin()));
+  }
+#endif
+
+  if (oldChild->parent() != this) {
     ASSERT(false);
     return;
   }
-  int index = before - m_children.begin();
+  int index = oldChild->m_parentIndex;
 
   removeChild(oldChild);
 
-  m_children.insert(m_children.begin()+index, newChild);
+  auto it = m_children.begin() + index;
+  it = m_children.insert(it, newChild);
+  for (auto end=m_children.end(); it!=end; ++it)
+    ++(*it)->m_parentIndex;
+
   newChild->m_parent = this;
+  newChild->m_parentIndex = index;
 }
 
 void Widget::insertChild(int index, Widget* child)
@@ -594,21 +613,37 @@ void Widget::insertChild(int index, Widget* child)
   ASSERT_VALID_WIDGET(this);
   ASSERT_VALID_WIDGET(child);
 
-  m_children.insert(m_children.begin()+index, child);
+  index = std::clamp(index, 0, int(m_children.size()));
+
+  auto it = m_children.begin() + index;
+  it = m_children.insert(it, child);
+  ++it;
+  for (auto end=m_children.end(); it!=end; ++it)
+    ++(*it)->m_parentIndex;
+
   child->m_parent = this;
+  child->m_parentIndex = index;
 }
 
 void Widget::moveChildTo(Widget* thisChild, Widget* toThisPosition)
 {
-  auto itA = std::find(m_children.begin(), m_children.end(), thisChild);
-  auto itB = std::find(m_children.begin(), m_children.end(), toThisPosition);
-  if (itA == m_children.end()) {
-    ASSERT(false);
-    return;
-  }
-  int index = itB - m_children.begin();
-  m_children.erase(itA);
-  m_children.insert(m_children.begin() + index, thisChild);
+  ASSERT(thisChild->parent() == this);
+  ASSERT(toThisPosition->parent() == this);
+
+  const int from = thisChild->m_parentIndex;
+  const int to = toThisPosition->m_parentIndex;
+
+  auto it = m_children.begin() + from;
+  it = m_children.erase(it);
+  auto end = m_children.end();
+  for (; it!=end; ++it)
+    --(*it)->m_parentIndex;
+
+  it = m_children.begin() + to;
+  it = m_children.insert(it, thisChild);
+  thisChild->m_parentIndex = to;
+  for (++it, end=m_children.end(); it!=end; ++it)
+    ++(*it)->m_parentIndex;
 }
 
 // ===============================================================
@@ -1262,8 +1297,8 @@ Size Widget::sizeHint()
     onSizeHint(ev);
 
     Size sz(ev.sizeHint());
-    sz.w = base::clamp(sz.w, m_minSize.w, m_maxSize.w);
-    sz.h = base::clamp(sz.h, m_minSize.h, m_maxSize.h);
+    sz.w = std::clamp(sz.w, m_minSize.w, m_maxSize.w);
+    sz.h = std::clamp(sz.h, m_minSize.h, m_maxSize.h);
     return sz;
   }
 }
@@ -1291,8 +1326,8 @@ Size Widget::sizeHint(const Size& fitIn)
     onSizeHint(ev);
 
     Size sz(ev.sizeHint());
-    sz.w = base::clamp(sz.w, m_minSize.w, m_maxSize.w);
-    sz.h = base::clamp(sz.h, m_minSize.h, m_maxSize.h);
+    sz.w = std::clamp(sz.w, m_minSize.w, m_maxSize.w);
+    sz.h = std::clamp(sz.h, m_minSize.h, m_maxSize.h);
     return sz;
   }
 }
@@ -1367,12 +1402,8 @@ bool Widget::offerCapture(ui::MouseMessage* mouseMsg, int widget_type)
     if (pick && pick != this && pick->type() == widget_type) {
       releaseMouse();
 
-      MouseMessage* mouseMsg2 = new MouseMessage(
-        kMouseDownMessage,
-        mouseMsg->pointerType(),
-        mouseMsg->button(),
-        mouseMsg->modifiers(),
-        mouseMsg->position());
+      MouseMessage* mouseMsg2 = new MouseMessage(kMouseDownMessage,
+                                                 *mouseMsg);
       mouseMsg2->setRecipient(pick);
       man->enqueueMessage(mouseMsg2);
       return true;
@@ -1454,13 +1485,7 @@ bool Widget::onProcessMessage(Message* msg)
     case kDoubleClickMessage: {
       // Convert double clicks into mouse down
       MouseMessage* mouseMsg = static_cast<MouseMessage*>(msg);
-      MouseMessage mouseMsg2(kMouseDownMessage,
-                             mouseMsg->pointerType(),
-                             mouseMsg->button(),
-                             mouseMsg->modifiers(),
-                             mouseMsg->position(),
-                             mouseMsg->wheelDelta());
-
+      MouseMessage mouseMsg2(kMouseDownMessage, *mouseMsg);
       sendMessage(&mouseMsg2);
       break;
     }

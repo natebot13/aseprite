@@ -47,7 +47,6 @@
 #include "app/ui/selection_mode_field.h"
 #include "app/ui/skin/skin_theme.h"
 #include "app/ui_context.h"
-#include "base/clamp.h"
 #include "base/fs.h"
 #include "base/scoped_value.h"
 #include "doc/brush.h"
@@ -643,7 +642,7 @@ private:
 
     char buf[32];
     int n = get_config_int("shades", "count", 0);
-    n = base::clamp(n, 0, 256);
+    n = std::clamp(n, 0, 256);
     for (int i=0; i<n; ++i) {
       sprintf(buf, "shade%d", i);
       Shade shade = shade_from_string(get_config_string("shades", buf, ""));
@@ -854,7 +853,7 @@ public:
     : ButtonSet(1) {
     addItem(SkinTheme::get(this)->parts.pivotCenter());
 
-    Preferences::instance().selection.pivotPosition.AfterChange.connect(
+    m_pivotConn = Preferences::instance().selection.pivotPosition.AfterChange.connect(
       [this]{ onPivotChange(); });
 
     onPivotChange();
@@ -925,6 +924,7 @@ private:
       getItem(0)->setIcon(part);
   }
 
+  obs::scoped_connection m_pivotConn;
 };
 
 class ContextBar::RotAlgorithmField : public ComboBox {
@@ -1586,17 +1586,16 @@ ContextBar::ContextBar(TooltipManager* tooltipManager,
   UIContext::instance()->add_observer(this);
 
   auto& pref = Preferences::instance();
-  pref.symmetryMode.enabled.AfterChange.connect(
+
+  m_symmModeConn = pref.symmetryMode.enabled.AfterChange.connect(
     [this]{ onSymmetryModeChange(); });
-  pref.colorBar.fgColor.AfterChange.connect(
+  m_fgColorConn = pref.colorBar.fgColor.AfterChange.connect(
     [this]{ onFgOrBgColorChange(doc::Brush::ImageColor::MainColor); });
-  pref.colorBar.bgColor.AfterChange.connect(
+  m_bgColorConn = pref.colorBar.bgColor.AfterChange.connect(
     [this]{ onFgOrBgColorChange(doc::Brush::ImageColor::BackgroundColor); });
-
-  KeyboardShortcuts::instance()->UserChange.connect(
+  m_keysConn = KeyboardShortcuts::instance()->UserChange.connect(
     [this, tooltipManager]{ setupTooltips(tooltipManager); });
-
-  m_dropPixels->DropPixels.connect(&ContextBar::onDropPixels, this);
+  m_dropPixelsConn = m_dropPixels->DropPixels.connect(&ContextBar::onDropPixels, this);
 
   setActiveBrush(createBrushFromPreferences());
 
@@ -2027,6 +2026,11 @@ void ContextBar::setActiveBrushBySlot(tools::Tool* tool, int slot)
 
     if (brush.brush()) {
       if (brush.brush()->type() == doc::kImageBrushType) {
+        // Reset the colors of the image when we select the brush from
+        // the slot.
+        if (brush.hasFlag(BrushSlot::Flags::ImageColor))
+          brush.brush()->resetImageColors();
+
         setActiveBrush(brush.brush());
       }
       else {
