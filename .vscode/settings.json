@@ -1,0 +1,8 @@
+{
+  "cmake.configureOnOpen": true,
+  "files.associations": {
+    "format": "cpp",
+    "xtree": "cpp"
+  },
+  // "cmake.generator": "Ninja"
+}
